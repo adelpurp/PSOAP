@@ -1,0 +1,196 @@
+### *Лабораторная работа №1. Сбор информации о параметрах сетевой инфраструктуры компаний*
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+### *Цель работы*: Собрать информацию о параметрах сетевой инфраструктуры 5 компаний на выбор из списка S&P500
+
+-------------------------------------------------------------------------------------------------------------------------------
+
+### *Выбранные компании:*
+1. Wells Fargo & Company
+2. Intel Corporation
+3. AT&T Inc.
+4. Visa Inc. Class A
+5. SL Green Realty Corp
+
+-------------------------------------------------------------------------------------------------------------------------------
+
+### *Исходные данные*
+1. Ноутбук c OC Windows
+2. Ubuntu
+3. Google Chrome
+4. Github
+
+-------------------------------------------------------------------------------------------------------------------------------
+
+### *Используемое ПО*
+   - Rstudio IDE - отчет
+   - nmap
+   - dig
+   - whois
+   
+--------------------------------------------------------------------------------------------------------------------------------
+
+### *Собираемые данные*
+1. Домен
+2. IP
+3. IP Netbloc
+4. Страна, город
+5. Адрес
+6. Телефон
+7. Хостинг (при наличии)
+8. Открытые порты
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+### *Варианты решений*
+1. Собрать информацию вручную с помощью веб-браузера, инструментов whois, dig, nmap и т.д.
+2. Использоавть интегрированные инструменты такие как SpiderFoot, Maltego CE, Datasploit, Recon-ng
+3. **Самостоятельно разработать (для образовательных целей) автоматизированное решение для сбора информации.
+--------------------------------------------------------------------------------------------------------------------------------
+
+
+### *Ход работы*
+
+
+```{r, cache=TRUE}
+library(tidyverse)
+get_sum_df <- function(company_url) {
+  country_state <- NA
+  dig <- system2('dig', company_url, stdout = TRUE)
+  ip <- dig %>%
+    grep(pattern = company_url, value = TRUE) %>%
+    str_extract(pattern = "\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b")
+  ip <- ip[!is.na(ip)]
+  
+  whois <- system2('whois', ip[1], stdout = TRUE)
+  phones <- whois %>%
+    grep(pattern = "Phone", value = TRUE, ignore.case = TRUE) %>%
+    str_squish() %>%
+    str_split(pattern = " ") %>%
+    data.table::transpose() %>%
+    .[[2]] %>%
+    unique() %>%
+    str_c(collapse = " ")
+  
+  netblock <- whois %>%
+    grep(pattern = "CIDR", value = TRUE, ignore.case = TRUE) %>%
+    str_squish() %>%
+    str_split(pattern = " ", simplify = TRUE) %>%
+    .[-1] %>%
+    str_c(collapse = " ")
+  
+  country <- whois %>%
+    grep(pattern = "Country",
+         value = TRUE,
+         ignore.case = TRUE) %>%
+    str_squish() %>%
+    str_split(pattern = " ", simplify = TRUE) %>%
+    .[-1]
+  
+  country_state <- whois %>%
+    grep(pattern = "State",
+         value = TRUE,
+         ignore.case = TRUE) %>%
+    str_squish() %>%
+    str_split(pattern = " ", simplify = TRUE) %>%
+    .[-1]
+  if(length(country_state)==0) country_state <- NA
+  
+  address <- whois %>%
+    grep(pattern = "address",
+         value = TRUE,
+         ignore.case = TRUE) %>%
+    str_squish() %>%
+    str_split(pattern = " ", simplify = TRUE) %>%
+    .[-1] %>%
+    str_c(collapse = " ")
+  
+  hosting <- whois %>%
+    grep(pattern = "Hosting",
+         value = TRUE,
+         ignore.case = TRUE) %>%
+    str_squish() %>%
+    str_split(pattern = " ")
+  hosting <- lapply(hosting, collapse = " ", str_c) %>%
+    str_c(collapse = " ")
+  
+  nmap <-
+    system2('nmap',
+            args = c('-p', '22,21,80,443', ip[1]),
+            stdout = TRUE)
+  ports <- nmap %>%
+    grep(pattern = "open",
+         value = TRUE,
+         ignore.case = TRUE) %>%
+    str_squish() %>%
+    str_split(pattern = " ") %>%
+    data.table::transpose() %>%
+    .[[1]] %>%
+    str_c(collapse = " ")
+  ip <- str_c(ip,collapse = ' ')
+  company_sum <-
+    data.frame(
+      csum = c(
+        company_url,
+        ip,
+        netblock,
+        country,
+        country_state,
+        address,
+        phones,
+        hosting,
+        ports
+      ),
+      row.names = c(
+        'company_url',
+        'ip',
+        'netblock',
+        'country',
+        'country_state',
+        'address',
+        'phones',
+        'hosting',
+        'ports'
+      )
+    )
+  company_sum
+  
+}
+urls <- c("wellsfargo.com", "intel.com", "att.com", "usa.visa.com", "slgreen.com")
+dfs <- lapply(urls, get_sum_df) # применение полученной функции к вектору, на выходе функции - список из одноколоночных датафреймов
+result <- bind_cols(dfs) # объединение в один датафрейм
+# задаем названия строк
+row.names(result) <- c(
+        'company_url',
+        'ip',
+        'netblock',
+        'country',
+        'country_state',
+        'address',
+        'phones',
+        'hosting',
+        'ports'
+      )
+# задаем названия столбцов из первой строки полученного датафрейма (предварительно переведя в тип character)
+colnames(result) <- map(result[1,],as.character) %>% unlist()
+# удалим теперь первую строку таблицы - она дублирует названия столбцов
+result <- result[-1,]
+# Выводим таблицу
+knitr::kable(result) 
+```
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+### *Оценка результата*
+	С помощью автоматизированного поиска нам удалось решить задачу по поиску информации наиболее быстрым способом.
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+### *Вывод*
+Мы собрали информацию о параметрах сетевой инфраструктуры 5 компаний автоматизированным методом, что позволило нам ускорить процесс поиска. 
+
+--------------------------------------------------------------------------------------------------------------------------------
+
